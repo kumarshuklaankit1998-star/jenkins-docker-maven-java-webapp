@@ -1,90 +1,73 @@
 pipeline {
-    
     agent {
         label "linuxbuildnode"
     }
-    
-    
+
     stages {
+        // Stage 1: SCM (Source Control Management)
         stage('SCM') {
             steps {
-                git 'https://github.com/vimallinuxworld13/jenkins-docker-maven-java-webapp.git'
-                
+                 echo "I am in SCM stage"
+                 git 'https://github.com/kumarshuklaankit1998-star/jenkins-docker-maven-java-webapp.git'
             }
-            
         }
         
-        stage('Build by Maven Package') {
+        // Stage 2: Build
+        stage('Build') {
             steps {
+                echo "I am in maven"
                 sh 'mvn clean package'
             }
-            
         }
         
-        
-        stage('Build Docker OWN image') {
+        // Stage 3: Docker Build Own image
+        stage('Build Docker own Image') {
             steps {
-                sh "sudo docker build -t  vimal13/javaweb:${BUILD_TAG}  ."
-                //sh 'whoami'
+                sh "sudo docker build -t ankit80042/javaweb:${BUILD_TAG} ."
+                sh 'whoami'
             }
-            
         }
-        
-        
-        stage('Push Image to Docker HUB') {
+
+         // Stage 4: Push image to Docker Hub
+        stage('Push image to Docker HUB') {
             steps {
-                
-                withCredentials([string(credentialsId: 'DOCKER_HUB_PWD', variable: 'DOCKER_HUB_PASS_CODE')]) {
+                withCredentials([string(credentialsId: 'Docker_Hub_Pwd', variable: 'Docker_Hub_Passwd_Code')]) {
     // some block
-                 sh "sudo docker login -u vimal13 -p $DOCKER_HUB_PASS_CODE"
+                sh "sudo docker login -u ankit80042 -p $Docker_Hub_Passwd_Code"
 }
-               
-               sh "sudo docker push vimal13/javaweb:${BUILD_TAG}"
+                sh "sudo docker push ankit80042/javaweb:${BUILD_TAG}"
             }
-            
         }
         
-        
-        stage('Deploy webAPP in DEV Env') {
+          // Stage 5: Docker dploy in Dev
+        stage('DeployWebApp in Dev Env') {
             steps {
                 sh 'sudo docker rm -f myjavaapp'
-                sh "sudo docker run  -d  -p  8080:8080 --name myjavaapp   vimal13/javaweb:${BUILD_TAG}"
-                //sh 'whoami'
+                sh "sudo docker run -d -p 8080:8080 --name myjavaapp ankit80042/javaweb:${BUILD_TAG}"
+                sh 'whoami'
             }
-            
         }
         
-        
-        stage('Deploy webAPP in QA/Test Env') {
+         stage('DeployWebApp in QA Env') {
             steps {
-               
-               sshagent(['QA_ENV_SSH_CRED']) {
-    
-                    sh "ssh  -o  StrictHostKeyChecking=no ec2-user@13.233.100.238 sudo docker rm -f myjavaapp"
-                    sh "ssh ec2-user@13.233.100.238 sudo docker run  -d  -p  8080:8080 --name myjavaapp   vimal13/javaweb:${BUILD_TAG}"
+                sshagent(['QA_ENV_SSH_CRED']) {
+                    // All commands requiring SSH keys MUST be inside this block
+                    sh "ssh -o StrictHostKeyChecking=no ec2-user@3.15.30.96 'sudo docker rm -f myjavaapp || true'"
+                    sh "ssh -o StrictHostKeyChecking=no ec2-user@3.15.30.96 'sudo docker run -d -p 8080:8080 --name myjavaapp ankit80042/javaweb:${BUILD_TAG}'"
                 }
-
+                // This is fine outside if it's just checking the Jenkins runner's user
+                sh 'whoami' 
             }
-            
         }
         
-        
-         stage('QAT Test') {
+         stage('QAT TEST') {
             steps {
-                
-               // sh 'curl --silent http://13.233.100.238:8080/java-web-app/ |  grep India'
-                
-                retry(10) {
-                    sh 'curl --silent http://13.233.100.238:8080/java-web-app/ |  grep India'
-                }
-            
-               
+                sh 'curl --silent http://3.15.30.96:8080/java-web-app/ | grep Welcome'
+                sh 'whoami' 
             }
         }
-          
         
-         
-         
+         // 
         stage('approved') {
             steps {
                 
@@ -105,48 +88,16 @@ pipeline {
         }
         }
         
-        
-         
-        
-        stage('Deploy webAPP in Prod Env') {
+         stage('DeployWebApp in Prod Env') {
             steps {
-               
-               sshagent(['QA_ENV_SSH_CRED']) {
-    
-                    
-                    sh "ssh  -o  StrictHostKeyChecking=no ec2-user@13.232.250.244 sudo kubectl  delete    deployment myjavawebapp"
-                    sh "ssh  ec2-user@13.232.250.244 sudo kubectl  create    deployment myjavawebapp  --image=vimal13/javaweb:${BUILD_TAG}"
-                    sh "ssh ec2-user@13.232.250.244 sudo wget https://raw.githubusercontent.com/vimallinuxworld13/jenkins-docker-maven-java-webapp/master/webappsvc.yml"
-                    sh "ssh ec2-user@13.232.250.244 sudo kubectl  apply -f webappsvc.yml"
-                    sh "ssh ec2-user@13.232.250.244 sudo kubectl  scale deployment myjavawebapp --replicas=5"
+                sshagent(['QA_ENV_SSH_CRED']) {
+                    // All commands requiring SSH keys MUST be inside this block
+                    sh "ssh -o StrictHostKeyChecking=no ec2-user@3.135.62.137 'sudo docker rm -f myjavaapp || true'"
+                    sh "ssh -o StrictHostKeyChecking=no ec2-user@3.135.62.137 'sudo docker run -d -p 8080:8080 --name myjavaapp ankit80042/javaweb:${BUILD_TAG}'"
                 }
-
+                // This is fine outside if it's just checking the Jenkins runner's user
+                sh 'whoami' 
             }
-            
-        } 
-        
-    
-        
+        }
     }
-    
-  
-        
-     post {
-         always {
-             echo "You can always see me"
-         }
-         success {
-              echo "I am running because the job ran successfully"
-         }
-         unstable {
-              echo "Gear up ! The build is unstable. Try fix it"
-         }
-         failure {
-             echo "OMG ! The build failed"
-             mail bcc: '', body: 'hi check this ..', cc: '', from: '', replyTo: '', subject: 'job ete fail', to: 'vdaga@lwindia.com'
-         }
-     }
-
-    
-    
 }
