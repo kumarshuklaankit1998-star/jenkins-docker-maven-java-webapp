@@ -1,0 +1,126 @@
+pipeline {
+    agent {
+        label "linuxbuildnode"
+    }
+
+    stages {
+        // Stage 1: SCM (Source Control Management)
+        stage('SCM') {
+            steps {
+                 echo "I am in SCM stage"
+                 git 'https://github.com/kumarshuklaankit1998-star/jenkins-docker-maven-java-webapp.git'
+            }
+        }
+        
+        // Stage 2: Build
+        stage('Build') {
+            steps {
+                echo "I am in maven"
+                sh 'mvn clean package'
+            }
+        }
+        
+        // Stage 3: Docker Build Own image
+        stage('Build Docker own Image') {
+            steps {
+                sh "sudo docker build -t ankit80042/javaweb:${BUILD_TAG} ."
+                sh 'whoami'
+            }
+        }
+
+         // Stage 4: Push image to Docker Hub
+        stage('Push image to Docker HUB') {
+            steps {
+                withCredentials([string(credentialsId: 'Docker_Hub_Pwd', variable: 'Docker_Hub_Passwd_Code')]) {
+    // some block
+                sh "sudo docker login -u ankit80042 -p $Docker_Hub_Passwd_Code"
+}
+                sh "sudo docker push ankit80042/javaweb:${BUILD_TAG}"
+            }
+        }
+        
+          // Stage 5: Docker dploy in Dev
+        stage('DeployWebApp in Dev Env') {
+            steps {
+                sh 'sudo docker rm -f myjavaapp'
+                sh "sudo docker run -d -p 8080:8080 --name myjavaapp ankit80042/javaweb:${BUILD_TAG}"
+                sh 'whoami'
+            }
+        }
+        
+         stage('DeployWebApp in QA Env') {
+            steps {
+                sshagent(['QA_ENV_SSH_CRED']) {
+                    // All commands requiring SSH keys MUST be inside this block
+                    sh "ssh -o StrictHostKeyChecking=no ec2-user@3.15.30.96 'sudo docker rm -f myjavaapp || true'"
+                    sh "ssh -o StrictHostKeyChecking=no ec2-user@3.15.30.96 'sudo docker run -d -p 8080:8080 --name myjavaapp ankit80042/javaweb:${BUILD_TAG}'"
+                }
+                // This is fine outside if it's just checking the Jenkins runner's user
+                sh 'whoami' 
+            }
+        }
+        
+         stage('QAT TEST') {
+            steps {
+                retry(10){
+                sh 'curl --silent http://3.15.30.96:8080/java-web-app/ | grep Welcome'}
+                sh 'whoami' 
+            }
+        }
+        
+         // 
+        stage('approved') {
+            steps {
+                
+            
+            script {
+                Boolean userInput = input(id: 'Proceed1', message: 'Promote build?', parameters: [[$class: 'BooleanParameterDefinition', defaultValue: true, description: '', name: 'Please confirm you agree with this']])
+                echo 'userInput: ' + userInput
+
+                if(userInput == true) {
+                    // do action
+                } else {
+                    // not do action
+                    echo "Action was aborted."
+                }
+            
+                
+            }
+        }
+        }
+        
+         stage('Debug K8s Connection') {
+                steps {
+                    sshagent(['QA_ENV_SSH_CRED']) {
+                        sh """ssh -o StrictHostKeyChecking=no ec2-user@18.117.248.239 '
+                            export KOPS_CLUSTER_NAME=jenkinslearn.com
+                            export KOPS_STATE_STORE=s3://jenkinsindia.in.k8s
+                            kops export kubecfg --admin
+                            kubectl config view
+                            kubectl cluster-info
+                        '"""
+                    }
+                }
+            }
+            
+            stage('DeployWebApp in Prod Env') {
+                steps {
+                    sshagent(['QA_ENV_SSH_CRED']) {
+                        sh """ssh -o StrictHostKeyChecking=no ec2-user@18.117.248.239 '
+                            export KOPS_CLUSTER_NAME=jenkinslearn.com
+                            export KOPS_STATE_STORE=s3://jenkinsindia.in.k8s
+                            kops export kubecfg --admin
+                            
+                            kubectl delete deployment myjavaapp || true
+                            kubectl create deployment myjavaapp --image=ankit80042/javaweb:${BUILD_TAG}
+                            
+                            wget -O webappsvc.yml https://raw.githubusercontent.com/kumarshuklaankit1998-star/jenkins-docker-maven-java-webapp/refs/heads/master/webappsvc.yml
+                            kubectl apply -f webappsvc.yml
+                            kubectl scale deployment myjavaapp --replicas=5
+                        '"""
+                    }
+                    sh 'whoami' 
+                }
+            }
+    }
+}
